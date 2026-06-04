@@ -3,8 +3,7 @@ Version:        0.1.0
 Release:        1%{?dist}
 Summary:        HDD/SSD/NVMe health monitor with a Hard Disk Sentinel-style UI
 
-# No LICENSE file is shipped yet — set this to the real SPDX id before release.
-License:        LicenseRef-Unspecified
+License:        MIT
 URL:            https://github.com/s4rt4/diskmaster
 Source0:        %{name}-%{version}.tar.gz
 BuildArch:      noarch
@@ -34,6 +33,7 @@ hdsentinel.com to enable that backend. smartctl works out of the box.
 make -C packaging install DESTDIR=%{buildroot} PREFIX=%{_prefix}
 
 %files
+%license %{_datadir}/licenses/diskmaster/LICENSE
 %{_bindir}/diskmaster
 %{_prefix}/lib/diskmaster/
 %{_libexecdir}/diskmaster/

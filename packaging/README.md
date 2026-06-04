@@ -45,8 +45,5 @@ sudo make -f packaging/Makefile uninstall
 
 ## TODO before a real release
 
-- **License:** there is no `LICENSE` file yet. Add one and replace the
-  `LicenseRef-Unspecified` / `custom` placeholders in `rpm/diskmaster.spec`,
-  `aur/PKGBUILD` and `flatpak/*.metainfo.xml`.
 - **Flatpak** is best-effort only: a sandboxed privileged disk monitor needs
   broad host access and host-side smartmontools. Prefer the native packages.

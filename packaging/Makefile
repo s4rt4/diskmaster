@@ -18,6 +18,7 @@ LIBEXEC  := $(DESTDIR)$(PREFIX)/libexec/diskmaster
 POLKITD  := $(DESTDIR)$(PREFIX)/share/polkit-1/actions
 DESKTOPD := $(DESTDIR)$(PREFIX)/share/applications
 ICONDIR  := $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps
+LICENSED := $(DESTDIR)$(PREFIX)/share/licenses/diskmaster
 
 .PHONY: install uninstall version
 
@@ -46,6 +47,9 @@ install:
 		"$(DESKTOPD)/diskmaster.desktop"
 	install -m 0644 "$(SRC)/assets/icons/diskmaster.svg" \
 		"$(ICONDIR)/diskmaster.svg"
+	# --- license (also the canonical Arch path) ---
+	install -d "$(LICENSED)"
+	install -m 0644 "$(ROOT)/LICENSE" "$(LICENSED)/LICENSE"
 
 uninstall:
 	rm -rf "$(DESTDIR)$(PREFIX)/lib/diskmaster"
@@ -54,3 +58,4 @@ uninstall:
 	rm -f  "$(POLKITD)/com.diskmaster.policy"
 	rm -f  "$(DESKTOPD)/diskmaster.desktop"
 	rm -f  "$(ICONDIR)/diskmaster.svg"
+	rm -rf "$(LICENSED)"

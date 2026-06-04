@@ -5,7 +5,7 @@ pkgrel=1
 pkgdesc="HDD/SSD/NVMe health monitor with a Hard Disk Sentinel-style UI"
 arch=('any')
 url="https://github.com/s4rt4/diskmaster"
-license=('custom')
+license=('MIT')
 depends=('python' 'python-pyqt6' 'polkit' 'smartmontools')
 optdepends=('nvme-cli: NVMe S.M.A.R.T. data'
             'libnotify: desktop notifications')
