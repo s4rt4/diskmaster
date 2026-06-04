@@ -159,11 +159,23 @@ class PrivClient:
     def hdsentinel_xml(self) -> str:
         return self.request("hdsentinel_xml")
 
+    def hdsentinel_solid(self) -> str:
+        return self.request("hdsentinel_solid")
+
     def smart(self, device: str) -> dict:
         return self.request("smart", device=device)
+
+    def nvme_smart(self, device: str) -> dict:
+        return self.request("nvme_smart", device=device)
 
     def selftest_start(self, device: str, ttype: str) -> dict:
         return self.request("selftest_start", device=device, type=ttype)
 
     def selftest_log(self, device: str) -> dict:
         return self.request("selftest_log", device=device)
+
+    def set_aam(self, drive: str, level: str) -> dict:
+        return self.request("set_aam", drive=drive, level=level)
+
+    def save_report(self, name: str, fmt: str = "txt") -> dict:
+        return self.request("save_report", name=name, format=fmt)

@@ -131,6 +131,20 @@ def cmd_selftest_log(req: dict) -> dict:
         return _err("smartctl selftest log not JSON")
 
 
+def cmd_nvme_smart(req: dict) -> dict:
+    device = req.get("device", "")
+    if (e := _check_device(device)):
+        return _err(e)
+    nv = paths.find_nvme()
+    if not nv:
+        return _err("nvme binary not found (install nvme-cli)")
+    cp = _run([nv, "smart-log", device, "-o", "json"])
+    try:
+        return _ok(json.loads(cp.stdout))
+    except json.JSONDecodeError:
+        return _err(f"nvme returned non-JSON (exit {cp.returncode})")
+
+
 def cmd_set_aam(req: dict) -> dict:
     drive = str(req.get("drive", ""))
     level = str(req.get("level", ""))
@@ -179,6 +193,7 @@ DISPATCH = {
     "hdsentinel_xml": cmd_hdsentinel_xml,
     "hdsentinel_solid": cmd_hdsentinel_solid,
     "smart": cmd_smart,
+    "nvme_smart": cmd_nvme_smart,
     "selftest_start": cmd_selftest_start,
     "selftest_log": cmd_selftest_log,
     "set_aam": cmd_set_aam,
