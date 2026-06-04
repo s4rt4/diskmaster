@@ -1,0 +1,40 @@
+# Planning doc (kept local, not published)
+diskmaster-plan.md
+
+# HDSentinel freeware binary — proprietary, redistribusi dibatasi (lihat plan #12).
+# User download sendiri dari hdsentinel.com
+HDSentinel
+diskmaster/assets/hdsentinel
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# App data / runtime
+data/
+*.db
+*.sqlite
+/tmp/hds_report.xml
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
