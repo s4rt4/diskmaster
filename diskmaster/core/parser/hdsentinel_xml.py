@@ -79,8 +79,60 @@ _FIELDS = {
     "performance": ["performance"],
     "power_on": ["powerontime", "poweronhours", "powerontimecount"],
     "lifetime": ["estimatedremaininglifetime", "remaininglifetime", "estimatedlifetime"],
-    "status": ["healthtext", "description", "overallhealthrating", "tip"],
+    "description": ["healthtext", "description", "overallhealthrating"],
+    "tip": ["tip", "recommendation"],
 }
+
+# Words HDSentinel uses in its explicit "...status ... is <WORD>" sentence.
+_STATUS_WORDS = {
+    "PERFECT": Status.PERFECT,
+    "EXCELLENT": Status.PERFECT,
+    "GOOD": Status.GOOD,
+    "OK": Status.GOOD,
+    "WARNING": Status.WARNING,
+    "CRITICAL": Status.FAILURE,
+    "FAILURE": Status.FAILURE,
+    "FAILED": Status.FAILURE,
+    "FAILING": Status.FAILURE,
+    "BAD": Status.FAILURE,
+}
+
+
+def _classify_status(description: str, tip: str, health: int) -> Status:
+    """Determine disk status the way HDSentinel presents it.
+
+    1. If the description/tip carries an explicit "...status ... is <WORD>"
+       sentence (HDSentinel's own verdict), trust that word. This avoids false
+       positives from sentences like "weak sectors were *not found*" or a
+       cable-communication note that merely contains the word "Problems".
+    2. Otherwise derive from Health %, escalating to WARNING when the tip advises
+       backing up / monitoring, or to FAILURE when it advises replacement.
+    """
+    for text in (description, tip):
+        m = re.search(r"status\b[^.]*?\bis\s+([A-Za-z]+)", text or "", re.IGNORECASE)
+        if m:
+            word = _STATUS_WORDS.get(m.group(1).upper())
+            if word:
+                return word
+
+    tip_l = (tip or "").lower()
+    if any(k in tip_l for k in ("replace", "failing", "immediately")):
+        return Status.FAILURE
+    advise_warn = any(k in tip_l for k in ("back up", "backup", "monitor"))
+
+    if health < 0:
+        base = Status.UNKNOWN
+    elif health >= 100:
+        base = Status.PERFECT
+    elif health >= 80:
+        base = Status.GOOD
+    elif health >= 50:
+        base = Status.WARNING
+    else:
+        base = Status.FAILURE
+    if advise_warn and base in (Status.PERFECT, Status.GOOD):
+        return Status.WARNING
+    return base
 
 
 def _index_texts(container: ET.Element) -> dict[str, str]:
@@ -151,6 +203,7 @@ def parse_xml(xml_text: str) -> list[DiskInfo]:
             continue
         model = _pick(texts, "model")
         interface = texts.get("interface", "")
+        health = _first_int(_pick(texts, "health"))
         disk = DiskInfo(
             device=device,
             model=model,
@@ -158,13 +211,14 @@ def parse_xml(xml_text: str) -> list[DiskInfo]:
             firmware=_pick(texts, "firmware"),
             size_gb=_parse_size_gb(_pick(texts, "size")),
             disk_type=_classify(model, interface, device),
-            health=_first_int(_pick(texts, "health")),
+            health=health,
             performance=_first_int(_pick(texts, "performance")),
             temp_current=_first_int(_pick(texts, "temp")),
             temp_max=_first_int(_pick(texts, "temp_max")),
             power_on_hours=_parse_duration_hours(_pick(texts, "power_on")),
             estimated_lifetime=_pick(texts, "lifetime"),
-            status=Status.from_text(_pick(texts, "status")),
+            status=_classify_status(
+                _pick(texts, "description"), _pick(texts, "tip"), health),
         )
         disks.append(disk)
 

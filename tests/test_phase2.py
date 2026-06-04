@@ -13,6 +13,7 @@ from core.models import DiskInfo, DiskType, Status, SmartAttribute  # noqa: E402
 from core.backends import sysfs, nvme  # noqa: E402
 from core.notifier import Notifier, TEMP_HIGH, HEALTH_LOW  # noqa: E402
 from core.parser.hdsentinel_solid import parse_solid  # noqa: E402
+from core.parser.hdsentinel_xml import _classify_status  # noqa: E402
 
 
 class DummySettings:
@@ -156,6 +157,33 @@ def test_solid_parse_both_ends():
     print("OK test_solid_parse_both_ends")
 
 
+def test_status_classification():
+    from core.models import Status
+    # Real sda: communication-error note (contains "Problems"), Tip says fine,
+    # health 100 → must NOT be downgraded to WARNING.
+    sda = _classify_status(
+        "Problems occurred between the communication of the disk and the host "
+        "607 times. ... try different cables to prevent further problems.",
+        "No actions needed.", 100)
+    assert sda == Status.PERFECT, sda
+
+    # Real sdb: explicit "status ... is PERFECT" wins over 66% health + monitor.
+    sdb = _classify_status(
+        "The status of the solid state disk is PERFECT. Problematic or weak "
+        "sectors were not found.",
+        "It is recommended to continuously monitor the hard disk status.", 66)
+    assert sdb == Status.PERFECT, sdb
+
+    # No explicit word + low health + backup advice → WARNING.
+    assert _classify_status("Some weak sectors detected.",
+                            "Back up important data.", 62) == Status.WARNING
+    # Replacement advice → FAILURE regardless of wording.
+    assert _classify_status("", "Replace the disk immediately.", 40) == Status.FAILURE
+    # Explicit FAILURE word.
+    assert _classify_status("The hard disk status is FAILURE.", "", 10) == Status.FAILURE
+    print("OK test_status_classification")
+
+
 if __name__ == "__main__":
     test_db_record_and_query()
     test_db_smart_alerts_cleanup()
@@ -163,4 +191,5 @@ if __name__ == "__main__":
     test_nvme_parse_and_enrich()
     test_notifier_rising_edge()
     test_solid_parse_both_ends()
+    test_status_classification()
     print("\nALL PASSED")
