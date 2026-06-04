@@ -82,7 +82,10 @@ def cmd_hdsentinel_solid(_req: dict) -> dict:
     binpath = paths.find_hdsentinel(str(_PKG_ROOT))
     if not binpath:
         return _err("hdsentinel binary not found")
-    cp = _run([binpath, "-solidi"])
+    # `-solid` (not `-solidi`): sizeMB is the last column, so the trailing
+    # field is a single numeric token — robust to right-anchored parsing.
+    # `-solidi` appends the interface, which can contain spaces.
+    cp = _run([binpath, "-solid"])
     return _ok(cp.stdout)
 
 

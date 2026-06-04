@@ -8,6 +8,7 @@ from .backends import nvme as nvme_backend
 from .backends.smartctl import parse_smart_json
 from .backends.sysfs import IOSampler
 from .models import DiskInfo, DiskType, IOStats
+from .parser.hdsentinel_solid import SolidRow, parse_solid
 from .parser.hdsentinel_xml import HDSentinelParseError, parse_xml
 from .privclient import PrivClient, PrivError
 
@@ -87,6 +88,16 @@ class DiskService:
                 disk.size_gb = ref.size_gb
             if not disk.model:
                 disk.model = ref.model
+
+    def quick_scan(self) -> dict[str, SolidRow]:
+        """Lightweight `-solid` poll → {device: SolidRow} of temp/health/POH.
+
+        Cheaper than a full XML scan; used between full scans to keep temp and
+        health fresh. Returns an empty dict if the output can't be parsed.
+        """
+        self.ensure_helper()
+        text = self.client.hdsentinel_solid()
+        return {row.device: row for row in parse_solid(text, with_interface=False)}
 
     def load_smart(self, device: str):
         """Return (list[SmartAttribute], raw_json) for a device."""

@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSplitter,
+    QSystemTrayIcon,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -24,6 +25,7 @@ from core.poller import PollerWorker
 from core.service import DiskService
 from core.privclient import PrivError
 
+from .alert_log import AlertLogPanel
 from .dashboard import DashboardPanel
 from .history_chart import HistoryChart
 from .selftest_panel import SelfTestPanel
@@ -58,6 +60,7 @@ class MainWindow(QMainWindow):
         self.db = HistoryDB()
         self.db.cleanup(int(settings.get("history", "retention_days", 90)))
         self.notifier = Notifier(settings)
+        self._tray = None
         self._disks: dict[str, DiskInfo] = {}
         self._smart_loader: _SmartLoader | None = None
 
@@ -71,9 +74,11 @@ class MainWindow(QMainWindow):
         self._build_statusbar()
 
         # Poller
-        interval = self.settings.get("polling", "full_interval_sec", 300)
-        self.poller = PollerWorker(self.service, interval)
+        full = self.settings.get("polling", "full_interval_sec", 300)
+        quick = self.settings.get("polling", "quick_interval_sec", 30)
+        self.poller = PollerWorker(self.service, full, quick)
         self.poller.disks_updated.connect(self._on_disks_updated)
+        self.poller.quick_updated.connect(self._on_quick_updated)
         self.poller.error.connect(self._on_poll_error)
         self.poller.status.connect(self._set_status)
 
@@ -134,6 +139,9 @@ class MainWindow(QMainWindow):
         self.tools_panel = ToolsPanel(self.service)
         self.tabs.addTab(self.tools_panel, "Tools")
 
+        self.alert_log = AlertLogPanel(self.db)
+        self.tabs.addTab(self.alert_log, "Alerts")
+
         splitter.addWidget(left)
         splitter.addWidget(self.tabs)
         splitter.setStretchFactor(0, 0)
@@ -149,9 +157,18 @@ class MainWindow(QMainWindow):
 
     # --------------------------------------------------------------- tray ----
 
-    def set_tray_notify(self, cb):
-        """Wire a tray showMessage callback as the notification fallback."""
-        self.notifier.set_tray_callback(cb)
+    def set_tray(self, tray):
+        """Hold the tray icon: refresh its tooltip on every poll and use its
+        bubble as the desktop-notification fallback."""
+        self._tray = tray
+        self.notifier.set_tray_callback(
+            lambda title, msg: tray.showMessage(
+                title, msg,
+                QSystemTrayIcon.MessageIcon.Warning, 8000))
+
+    def _refresh_tray(self):
+        if self._tray:
+            self._tray.update_disks(list(self._disks.values()))
 
     # --------------------------------------------------------------- actions --
 
@@ -178,7 +195,8 @@ class MainWindow(QMainWindow):
         dlg = SettingsDialog(self.settings, self)
         if dlg.exec():
             self.poller.set_interval(
-                self.settings.get("polling", "full_interval_sec", 300))
+                self.settings.get("polling", "full_interval_sec", 300),
+                self.settings.get("polling", "quick_interval_sec", 30))
             self.db.cleanup(int(self.settings.get("history", "retention_days", 90)))
             self._set_status("Settings saved.")
 
@@ -221,11 +239,51 @@ class MainWindow(QMainWindow):
 
         # Persist history and fire any new threshold alerts.
         self.db.record_disks(disks)
-        for alert in self.notifier.check(disks):
+        new_alerts = self.notifier.check(disks)
+        for alert in new_alerts:
             self.db.add_alert(alert.identity, alert.alert_type, alert.message)
             self.notifier.notify([alert])
 
         self.history_chart.reload()
+        self._refresh_tray()
+        if new_alerts:
+            self.alert_log.reload()
+
+    def _on_quick_updated(self, rows: dict):
+        """Patch temp/health/POH from a lightweight -solid poll, without losing
+        the richer fields (status, serial, SMART) from the last full scan."""
+        touched = []
+        for device, row in rows.items():
+            disk = self._disks.get(device)
+            if not disk:
+                continue
+            if row.temp_current >= 0:
+                disk.temp_current = row.temp_current
+            if row.health >= 0:
+                disk.health = row.health
+            if row.power_on_hours >= 0:
+                disk.power_on_hours = row.power_on_hours
+            touched.append(disk)
+
+        if not touched:
+            return
+
+        # Refresh the dashboard if the selected disk changed.
+        item = self.disk_list.currentItem()
+        if item:
+            sel = self._disks.get(item.data(Qt.ItemDataRole.UserRole))
+            if sel in touched:
+                self.dashboard.set_disk(sel)
+
+        self.db.record_disks(touched)
+        new_alerts = self.notifier.check(touched)
+        for alert in new_alerts:
+            self.db.add_alert(alert.identity, alert.alert_type, alert.message)
+            self.notifier.notify([alert])
+        self.history_chart.reload()
+        self._refresh_tray()
+        if new_alerts:
+            self.alert_log.reload()
 
     def _on_select(self, current: QListWidgetItem, _prev=None):
         if not current:

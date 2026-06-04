@@ -158,13 +158,20 @@ class HistoryDB:
         )
         self._conn.commit()
 
-    def recent_alerts(self, limit: int = 100) -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT identity, timestamp, alert_type, message, acknowledged "
-            "FROM alerts ORDER BY timestamp DESC LIMIT ?",
-            (limit,),
-        )
-        return [dict(r) for r in rows]
+    def recent_alerts(self, limit: int = 100,
+                      include_acknowledged: bool = False) -> list[dict]:
+        q = ("SELECT identity, timestamp, alert_type, message, acknowledged "
+             "FROM alerts ")
+        if not include_acknowledged:
+            q += "WHERE acknowledged = 0 "
+        q += "ORDER BY timestamp DESC LIMIT ?"
+        return [dict(r) for r in self._conn.execute(q, (limit,))]
+
+    def acknowledge_all(self) -> int:
+        """Mark every alert acknowledged (audit trail stays in the table)."""
+        cur = self._conn.execute("UPDATE alerts SET acknowledged = 1")
+        self._conn.commit()
+        return cur.rowcount
 
     # ------------------------------------------------------------- retention --
 

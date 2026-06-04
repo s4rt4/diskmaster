@@ -51,12 +51,9 @@ def main() -> int:
     if QSystemTrayIcon.isSystemTrayAvailable():
         tray = TrayIcon(window, icon)
         tray.show()
-        window.poller.disks_updated.connect(tray.update_disks)
-        # Use the tray bubble as the notification fallback when notify-send is absent.
-        window.set_tray_notify(
-            lambda title, msg: tray.showMessage(
-                title, msg, QSystemTrayIcon.MessageIcon.Warning, 8000)
-        )
+        # The window refreshes the tray tooltip on every poll (full + quick) and
+        # uses the tray bubble as the notification fallback.
+        window.set_tray(tray)
         # Don't quit when the window is closed if the tray is present.
         app.setQuitOnLastWindowClosed(False)
 

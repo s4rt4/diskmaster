@@ -12,6 +12,7 @@ from core.db import HistoryDB  # noqa: E402
 from core.models import DiskInfo, DiskType, Status, SmartAttribute  # noqa: E402
 from core.backends import sysfs, nvme  # noqa: E402
 from core.notifier import Notifier, TEMP_HIGH, HEALTH_LOW  # noqa: E402
+from core.parser.hdsentinel_solid import parse_solid  # noqa: E402
 
 
 class DummySettings:
@@ -127,10 +128,39 @@ def test_notifier_rising_edge():
     print("OK test_notifier_rising_edge")
 
 
+_SOLID = """
+HDSentinel header line that should be ignored
+/dev/sda 34 89 3194 TOSHIBA MQ01ABD032 X5J7TABCS 305245
+/dev/nvme0n1 38 95 1200 Samsung SSD 980 1TB S5GXNF0R 1000204
+
+"""
+
+
+def test_solid_parse_both_ends():
+    rows = parse_solid(_SOLID, with_interface=False)
+    assert len(rows) == 2, f"expected 2 rows, got {len(rows)}"
+
+    sda = rows[0]
+    assert sda.device == "/dev/sda"
+    assert sda.temp_current == 34 and sda.health == 89
+    assert sda.power_on_hours == 3194
+    assert sda.model == "TOSHIBA MQ01ABD032"   # model with a space
+    assert sda.serial == "X5J7TABCS"
+    assert abs(sda.size_gb - 305.245) < 0.01
+
+    nv = rows[1]
+    assert nv.device == "/dev/nvme0n1"
+    assert nv.model == "Samsung SSD 980 1TB"   # multi-word model
+    assert nv.serial == "S5GXNF0R"
+    assert nv.health == 95
+    print("OK test_solid_parse_both_ends")
+
+
 if __name__ == "__main__":
     test_db_record_and_query()
     test_db_smart_alerts_cleanup()
     test_sysfs_throughput_math()
     test_nvme_parse_and_enrich()
     test_notifier_rising_edge()
+    test_solid_parse_both_ends()
     print("\nALL PASSED")
