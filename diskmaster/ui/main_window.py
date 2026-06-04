@@ -1,15 +1,23 @@
-"""Main application window."""
+"""Main application window — HDSentinel-style layout.
+
+Left column: physical-disk cards (top) and mounted-volume cards (bottom).
+Right: seven tabs mirroring HDSentinel — Overview, Temperature, S.M.A.R.T.,
+Information, Log, Disk Performance, Alerts. A toolbar offers Scan, a light/dark
+theme toggle, Settings and About; the status bar shows when data was last read.
+"""
 from __future__ import annotations
+
+from datetime import datetime
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import (
+    QApplication,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QSystemTrayIcon,
     QTabWidget,
@@ -25,19 +33,23 @@ from core.poller import PollerWorker
 from core.service import DiskService
 from core.privclient import PrivError
 
+from . import theme
 from .alert_log import AlertLogPanel
-from .dashboard import DashboardPanel
-from .history_chart import HistoryChart
+from .disk_card import DiskListPanel, VolumePanel
+from .information_panel import InformationPanel
+from .overview_panel import OverviewPanel
+from .performance_panel import PerformancePanel
 from .selftest_panel import SelfTestPanel
 from .settings_dialog import SettingsDialog
 from .smart_table import SmartTable
-from .tools_panel import ToolsPanel
+from .temperature_panel import TemperaturePanel
+from .widgets import status_icon
 
 
 class _SmartLoader(QThread):
     """One-shot SMART fetch off the GUI thread."""
-    loaded = pyqtSignal(str, object)   # device, list[SmartAttribute]
-    failed = pyqtSignal(str, str)      # device, error
+    loaded = pyqtSignal(str, object)
+    failed = pyqtSignal(str, str)
 
     def __init__(self, service: DiskService, device: str, parent=None):
         super().__init__(parent)
@@ -63,17 +75,17 @@ class MainWindow(QMainWindow):
         self._tray = None
         self._disks: dict[str, DiskInfo] = {}
         self._smart_loader: _SmartLoader | None = None
+        self._theme = theme.normalize(settings.get("general", "theme", "light"))
 
         self.setWindowTitle("DiskMaster")
         if icon:
             self.setWindowIcon(icon)
-        self.resize(960, 640)
+        self.resize(1000, 660)
 
         self._build_toolbar()
         self._build_central()
         self._build_statusbar()
 
-        # Poller
         full = self.settings.get("polling", "full_interval_sec", 300)
         quick = self.settings.get("polling", "quick_interval_sec", 30)
         self.poller = PollerWorker(self.service, full, quick)
@@ -82,8 +94,8 @@ class MainWindow(QMainWindow):
         self.poller.error.connect(self._on_poll_error)
         self.poller.status.connect(self._set_status)
 
-        # Show sysfs disks immediately (no privilege needed).
         self._populate(self.service.sysfs_disks())
+        self._refresh_volumes()
         self._set_status("Ready — click “Scan” to read health (requires admin).")
 
     # ----------------------------------------------------------- UI building --
@@ -95,6 +107,10 @@ class MainWindow(QMainWindow):
         self.act_scan.triggered.connect(self._start_scan)
         tb.addAction(self.act_scan)
         tb.addSeparator()
+        self.act_theme = QAction("", self)
+        self.act_theme.triggered.connect(self._toggle_theme)
+        tb.addAction(self.act_theme)
+        self._sync_theme_action()
         act_settings = QAction("Settings", self)
         act_settings.triggered.connect(self._open_settings)
         tb.addAction(act_settings)
@@ -105,49 +121,61 @@ class MainWindow(QMainWindow):
     def _build_central(self):
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Left: disk list
-        left = QWidget()
-        lv = QVBoxLayout(left)
-        lv.setContentsMargins(8, 8, 8, 8)
-        lbl = QLabel("Disks")
-        lbl.setStyleSheet("font-weight:bold; padding:4px;")
-        self.disk_list = QListWidget()
-        self.disk_list.currentItemChanged.connect(self._on_select)
-        lv.addWidget(lbl)
-        lv.addWidget(self.disk_list)
+        # Left column: disks (top) + volumes (bottom), each scrollable.
+        left = QSplitter(Qt.Orientation.Vertical)
+        self.disk_panel = DiskListPanel()
+        self.disk_panel.selected.connect(self._on_select_device)
+        self.volume_panel = VolumePanel()
+        left.addWidget(self._scroll(self.disk_panel))
+        left.addWidget(self._scroll(self.volume_panel))
+        left.setStretchFactor(0, 3)
+        left.setStretchFactor(1, 1)
 
-        # Right: tabs
+        # Right: the seven HDSentinel tabs.
         self.tabs = QTabWidget()
-        self.dashboard = DashboardPanel()
-        self.tabs.addTab(self.dashboard, "Overview")
-
-        smart_tab = QWidget()
-        sv = QVBoxLayout(smart_tab)
-        self.btn_load_smart = QPushButton("Load SMART data")
-        self.btn_load_smart.clicked.connect(self._load_smart)
-        self.smart_table = SmartTable()
-        sv.addWidget(self.btn_load_smart)
-        sv.addWidget(self.smart_table)
-        self.tabs.addTab(smart_tab, "SMART")
-
-        self.history_chart = HistoryChart(self.db)
-        self.tabs.addTab(self.history_chart, "History")
-
-        self.selftest_panel = SelfTestPanel(self.service)
-        self.tabs.addTab(self.selftest_panel, "Self-Test")
-
-        self.tools_panel = ToolsPanel(self.service)
-        self.tabs.addTab(self.tools_panel, "Tools")
-
+        self.tabs.setDocumentMode(True)
+        self.overview = OverviewPanel(self.db)
+        self.overview.repeat_test.connect(self._start_scan)
+        self.temperature = TemperaturePanel(self.db)
+        self.smart_tab = self._build_smart_tab()
+        self.information = InformationPanel(self.service)
+        self.log_panel = SelfTestPanel(self.service)
+        self.performance = PerformancePanel()
         self.alert_log = AlertLogPanel(self.db)
+
+        self.tabs.addTab(self.overview, "Overview")
+        self.tabs.addTab(self.temperature, "Temperature")
+        self.tabs.addTab(self.smart_tab, "S.M.A.R.T.")
+        self.tabs.addTab(self.information, "Information")
+        self.tabs.addTab(self.log_panel, "Log")
+        self.tabs.addTab(self.performance, "Disk Performance")
         self.tabs.addTab(self.alert_log, "Alerts")
 
         splitter.addWidget(left)
         splitter.addWidget(self.tabs)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([240, 720])
+        splitter.setSizes([300, 700])
         self.setCentralWidget(splitter)
+
+    @staticmethod
+    def _scroll(widget: QWidget) -> QScrollArea:
+        sc = QScrollArea()
+        sc.setWidgetResizable(True)
+        sc.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        sc.setFrameShape(QScrollArea.Shape.NoFrame)
+        sc.setWidget(widget)
+        return sc
+
+    def _build_smart_tab(self) -> QWidget:
+        w = QWidget()
+        v = QVBoxLayout(w)
+        self.btn_load_smart = QPushButton("Load SMART data")
+        self.btn_load_smart.clicked.connect(self._load_smart)
+        self.smart_table = SmartTable()
+        v.addWidget(self.btn_load_smart)
+        v.addWidget(self.smart_table)
+        return w
 
     def _build_statusbar(self):
         self.status_label = QLabel("")
@@ -155,16 +183,31 @@ class MainWindow(QMainWindow):
         self.priv_label = QLabel("")
         self.statusBar().addPermanentWidget(self.priv_label)
 
+    # --------------------------------------------------------------- theme ----
+
+    def _sync_theme_action(self):
+        nxt = "Dark" if self._theme == "light" else "Light"
+        glyph = "☾" if self._theme == "light" else "☀"
+        self.act_theme.setText(f"{glyph}  {nxt} mode")
+        self.act_theme.setToolTip(f"Switch to {nxt.lower()} theme")
+
+    def _toggle_theme(self):
+        self._theme = theme.next_mode(self._theme)
+        theme.apply_theme(QApplication.instance(), self._theme)
+        self.settings.set("general", "theme", self._theme)
+        self.settings.save()
+        self._sync_theme_action()
+        # Re-apply selection styling so cards pick up the new palette.
+        if self.disk_panel.current:
+            self.disk_panel.select(self.disk_panel.current)
+
     # --------------------------------------------------------------- tray ----
 
     def set_tray(self, tray):
-        """Hold the tray icon: refresh its tooltip on every poll and use its
-        bubble as the desktop-notification fallback."""
         self._tray = tray
         self.notifier.set_tray_callback(
             lambda title, msg: tray.showMessage(
-                title, msg,
-                QSystemTrayIcon.MessageIcon.Warning, 8000))
+                title, msg, QSystemTrayIcon.MessageIcon.Warning, 8000))
 
     def _refresh_tray(self):
         if self._tray:
@@ -180,10 +223,9 @@ class MainWindow(QMainWindow):
         self._set_status("Scanning… (an admin prompt may appear)")
 
     def _load_smart(self):
-        item = self.disk_list.currentItem()
-        if not item:
+        device = self.disk_panel.current
+        if not device:
             return
-        device = item.data(Qt.ItemDataRole.UserRole)
         self.btn_load_smart.setEnabled(False)
         self.btn_load_smart.setText("Loading…")
         self._smart_loader = _SmartLoader(self.service, device)
@@ -198,60 +240,48 @@ class MainWindow(QMainWindow):
                 self.settings.get("polling", "full_interval_sec", 300),
                 self.settings.get("polling", "quick_interval_sec", 30))
             self.db.cleanup(int(self.settings.get("history", "retention_days", 90)))
+            # Theme may have changed via the dialog too.
+            new_theme = theme.normalize(self.settings.get("general", "theme", "light"))
+            if new_theme != self._theme:
+                self._theme = new_theme
+                theme.apply_theme(QApplication.instance(), self._theme)
+                self._sync_theme_action()
             self._set_status("Settings saved.")
 
     def _about(self):
         QMessageBox.about(
-            self,
-            "About DiskMaster",
+            self, "About DiskMaster",
             "<b>DiskMaster</b><br>"
             "HDD/SSD/NVMe monitoring for Linux.<br>"
             "Backend: HDSentinel + smartctl + sysfs + nvme-cli.<br><br>"
-            f"Privilege method: <b>{self.service.client.method}</b>",
-        )
+            f"Privilege method: <b>{self.service.client.method}</b>")
 
     # --------------------------------------------------------------- signals --
 
     def _populate(self, disks: list[DiskInfo]):
-        prev = None
-        item = self.disk_list.currentItem()
-        if item:
-            prev = item.data(Qt.ItemDataRole.UserRole)
-
-        self.disk_list.blockSignals(True)
-        self.disk_list.clear()
         self._disks = {d.device: d for d in disks}
-        select_row = 0
-        for i, d in enumerate(disks):
-            label = f"{d.device}\n{d.model or d.disk_type.value} · {d.size_human}"
-            it = QListWidgetItem(label)
-            it.setData(Qt.ItemDataRole.UserRole, d.device)
-            self.disk_list.addItem(it)
-            if d.device == prev:
-                select_row = i
-        self.disk_list.blockSignals(False)
-        if self.disk_list.count():
-            self.disk_list.setCurrentRow(select_row)
+        self.disk_panel.set_disks(disks)  # auto-selects → _on_select_device
+
+    def _refresh_volumes(self):
+        self.volume_panel.set_volumes(
+            self.service.volumes(), self.disk_panel.disk_index())
 
     def _on_disks_updated(self, disks: list[DiskInfo]):
         self._populate(disks)
+        self._refresh_volumes()
         self.priv_label.setText(f"priv: {self.service.client.method}")
 
-        # Persist history and fire any new threshold alerts.
         self.db.record_disks(disks)
         new_alerts = self.notifier.check(disks)
         for alert in new_alerts:
             self.db.add_alert(alert.identity, alert.alert_type, alert.message)
             self.notifier.notify([alert])
-
-        self.history_chart.reload()
-        self._refresh_tray()
         if new_alerts:
             self.alert_log.reload()
+        self._refresh_tray()
+        self._stamp_updated()
 
     def _on_quick_updated(self, rows: dict):
-        """Patch temp/health/POH from a lightweight -solid poll, without losing
-        the richer fields (status, serial, SMART) from the last full scan."""
         touched = []
         for device, row in rows.items():
             disk = self._disks.get(device)
@@ -263,42 +293,43 @@ class MainWindow(QMainWindow):
                 disk.health = row.health
             if row.power_on_hours >= 0:
                 disk.power_on_hours = row.power_on_hours
+            self.disk_panel.update_disk(disk)
             touched.append(disk)
-
         if not touched:
             return
 
-        # Refresh the dashboard if the selected disk changed.
-        item = self.disk_list.currentItem()
-        if item:
-            sel = self._disks.get(item.data(Qt.ItemDataRole.UserRole))
-            if sel in touched:
-                self.dashboard.set_disk(sel)
+        # Refresh the open tabs if the selected disk changed (skip Performance —
+        # it samples live on its own timer).
+        cur = self.disk_panel.current
+        if cur and self._disks.get(cur) in touched:
+            self._apply_to_tabs(self._disks[cur], include_perf=False)
 
         self.db.record_disks(touched)
         new_alerts = self.notifier.check(touched)
         for alert in new_alerts:
             self.db.add_alert(alert.identity, alert.alert_type, alert.message)
             self.notifier.notify([alert])
-        self.history_chart.reload()
-        self._refresh_tray()
         if new_alerts:
             self.alert_log.reload()
+        self._refresh_tray()
+        self._stamp_updated()
 
-    def _on_select(self, current: QListWidgetItem, _prev=None):
-        if not current:
-            self.dashboard.clear()
-            self.history_chart.set_identity(None)
-            self.selftest_panel.set_device(None)
-            self.tools_panel.set_disk(None)
-            return
-        device = current.data(Qt.ItemDataRole.UserRole)
+    def _on_select_device(self, device: str):
         disk = self._disks.get(device)
         if disk:
-            self.dashboard.set_disk(disk)
-            self.history_chart.set_identity(disk.identity)
-            self.selftest_panel.set_device(disk.device)
-            self.tools_panel.set_disk(disk)
+            self._apply_to_tabs(disk, include_perf=True)
+            self._update_overview_tab_icon(disk)
+
+    def _apply_to_tabs(self, disk: DiskInfo, include_perf: bool):
+        self.overview.set_disk(disk)
+        self.temperature.set_disk(disk)
+        self.information.set_disk(disk)
+        self.log_panel.set_device(disk.device)
+        if include_perf:
+            self.performance.set_disk(disk)
+
+    def _update_overview_tab_icon(self, disk: DiskInfo):
+        self.tabs.setTabIcon(0, status_icon(disk.status, 14))
 
     def _on_poll_error(self, msg: str):
         self._set_status(f"⚠ {msg}")
@@ -319,6 +350,10 @@ class MainWindow(QMainWindow):
 
     def _set_status(self, text: str):
         self.status_label.setText(text)
+
+    def _stamp_updated(self):
+        now = datetime.now().strftime("%d/%m/%Y %A %H:%M:%S")
+        self._set_status(f"Status last updated: {now}")
 
     # ----------------------------------------------------------------- close --
 

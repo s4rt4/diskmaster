@@ -7,7 +7,8 @@ from . import paths
 from .backends import nvme as nvme_backend
 from .backends.smartctl import parse_smart_json
 from .backends.sysfs import IOSampler
-from .models import DiskInfo, DiskType, IOStats
+from .backends.volumes import list_volumes
+from .models import DiskInfo, DiskType, IOStats, VolumeInfo
 from .parser.hdsentinel_solid import SolidRow, parse_solid
 from .parser.hdsentinel_xml import HDSentinelParseError, parse_xml
 from .privclient import PrivClient, PrivError
@@ -75,6 +76,10 @@ class DiskService:
     def io_stats(self, device: str) -> IOStats | None:
         """One-off non-privileged I/O sample for a device path."""
         return self._io.sample(device.rsplit("/", 1)[-1])
+
+    def volumes(self) -> list[VolumeInfo]:
+        """Mounted volumes with free space — non-privileged."""
+        return list_volumes()
 
     def _enrich_from_sysfs(self, disks: list[DiskInfo]) -> None:
         sysfs = {d.device: d for d in self.sysfs_disks()}

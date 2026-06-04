@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import QApplication, QSystemTrayIcon  # noqa: E402
 
 from config.settings import Settings  # noqa: E402
 from core.service import DiskService  # noqa: E402
+from ui import theme  # noqa: E402
 from ui.main_window import MainWindow  # noqa: E402
 from ui.tray_icon import TrayIcon  # noqa: E402
 
@@ -44,6 +45,7 @@ def main() -> int:
     app.setWindowIcon(icon)
 
     settings = Settings()
+    theme.apply_theme(app, settings.get("general", "theme", "light"))
     service = DiskService()
     window = MainWindow(service, settings, icon)
 

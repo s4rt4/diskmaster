@@ -97,3 +97,37 @@ class DiskHistory:
     temp: int
     health: int
     performance: int = -1
+
+
+@dataclass
+class VolumeInfo:
+    """A mounted filesystem on a physical disk (the C:/D: column)."""
+    device: str           # /dev/sda1
+    mountpoint: str       # /
+    label: str            # human label (mountpoint or fs label)
+    fstype: str = ""
+    total_gb: float = 0.0
+    free_gb: float = 0.0
+    parent: str = ""      # parent disk name, e.g. 'sda'
+
+    @property
+    def used_gb(self) -> float:
+        return max(0.0, self.total_gb - self.free_gb)
+
+    @property
+    def free_fraction(self) -> float:
+        return self.free_gb / self.total_gb if self.total_gb > 0 else 0.0
+
+    @staticmethod
+    def _human(gb: float) -> str:
+        if gb >= 1024:
+            return f"{gb / 1024:.2f} TB"
+        return f"{gb:.1f} GB"
+
+    @property
+    def total_human(self) -> str:
+        return self._human(self.total_gb)
+
+    @property
+    def free_human(self) -> str:
+        return self._human(self.free_gb)

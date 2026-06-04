@@ -78,7 +78,7 @@ class SettingsDialog(QDialog):
         root.addWidget(thr)
 
         # Paths + retention
-        misc = QGroupBox("Paths & History")
+        misc = QGroupBox("Paths and History")
         mf = QFormLayout(misc)
         self.p_hds = QLineEdit(g("paths", "hdsentinel", ""))
         self.p_hds.setPlaceholderText("auto-detect")
