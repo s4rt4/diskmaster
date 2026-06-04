@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from . import paths
 from .backends import nvme as nvme_backend
-from .backends.smartctl import parse_smart_json
+from .backends.smartctl import is_asleep, parse_smart_json, power_mode_from_json
 from .backends.sysfs import IOSampler
 from .backends.volumes import list_volumes
 from .models import DiskInfo, DiskType, IOStats, VolumeInfo
@@ -104,11 +104,41 @@ class DiskService:
         text = self.client.hdsentinel_solid()
         return {row.device: row for row in parse_solid(text, with_interface=False)}
 
-    def load_smart(self, device: str):
-        """Return (list[SmartAttribute], raw_json) for a device."""
+    def load_smart(self, device: str, nowake: bool = False):
+        """Return (list[SmartAttribute], raw_json) for a device.
+
+        With ``nowake`` the read is skipped (no spin-up) if the drive is asleep;
+        the raw dict then carries ``{"_standby": True}`` and the attr list is
+        empty.
+        """
         self.ensure_helper()
-        data = self.client.smart(device)
+        data = self.client.smart(device, nowake=nowake)
+        if nowake and is_asleep(data):
+            return [], {"_standby": True}
         return parse_smart_json(data), data
+
+    def power_mode(self, device: str) -> str:
+        """ATA power mode of a drive without waking it (active/idle/standby/…)."""
+        self.ensure_helper()
+        return power_mode_from_json(self.client.power_mode(device))
+
+    def all_disks_asleep(self) -> bool:
+        """True iff every spinning/SATA disk is in standby/sleep.
+
+        NVMe drives have no ATA standby and are ignored. With no ATA disks at
+        all this is False (there is nothing whose sleep we'd be preserving).
+        """
+        ata = [d for d in self.sysfs_disks()
+               if d.disk_type in (DiskType.HDD, DiskType.SSD)]
+        if not ata:
+            return False
+        for d in ata:
+            try:
+                if self.power_mode(d.device) not in ("standby", "sleep"):
+                    return False
+            except PrivError:
+                return False  # can't tell → don't suppress the scan
+        return True
 
     def start_selftest(self, device: str, ttype: str) -> dict:
         self.ensure_helper()

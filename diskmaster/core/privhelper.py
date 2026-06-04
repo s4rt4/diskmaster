@@ -101,8 +101,30 @@ def cmd_smart(req: dict) -> dict:
     sm = paths.find_smartctl()
     if not sm:
         return _err("smartctl not found")
-    cp = _run([sm, "-a", "-j", device])
+    # nowake: ask smartctl to bail (CHECK POWER MODE only) if the drive is asleep
+    # so a background poll never spins an idle disk up.
+    argv = [sm]
+    if req.get("nowake"):
+        argv += ["-n", "standby"]
+    argv += ["-a", "-j", device]
+    cp = _run(argv)
     # smartctl uses bitfield exit codes; stdout JSON is still valid on warnings.
+    try:
+        return _ok(json.loads(cp.stdout))
+    except json.JSONDecodeError:
+        return _err(f"smartctl returned non-JSON (exit {cp.returncode})")
+
+
+def cmd_power_mode(req: dict) -> dict:
+    """Report the drive's ATA power mode without spinning it up."""
+    device = req.get("device", "")
+    if (e := _check_device(device)):
+        return _err(e)
+    sm = paths.find_smartctl()
+    if not sm:
+        return _err("smartctl not found")
+    # `-n standby -i`: issues CHECK POWER MODE; only reads identity if awake.
+    cp = _run([sm, "-n", "standby", "-i", "-j", device])
     try:
         return _ok(json.loads(cp.stdout))
     except json.JSONDecodeError:
@@ -132,7 +154,9 @@ def cmd_selftest_log(req: dict) -> dict:
     sm = paths.find_smartctl()
     if not sm:
         return _err("smartctl not found")
-    cp = _run([sm, "-l", "selftest", "-j", device])
+    # `-c` adds ata_smart_data.self_test.status (live progress / remaining %);
+    # `-l selftest` adds the historical results table. Both in one JSON.
+    cp = _run([sm, "-c", "-l", "selftest", "-j", device])
     try:
         return _ok(json.loads(cp.stdout))
     except json.JSONDecodeError:
@@ -201,6 +225,7 @@ DISPATCH = {
     "hdsentinel_xml": cmd_hdsentinel_xml,
     "hdsentinel_solid": cmd_hdsentinel_solid,
     "smart": cmd_smart,
+    "power_mode": cmd_power_mode,
     "nvme_smart": cmd_nvme_smart,
     "selftest_start": cmd_selftest_start,
     "selftest_log": cmd_selftest_log,

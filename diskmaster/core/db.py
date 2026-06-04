@@ -54,6 +54,19 @@ CREATE TABLE IF NOT EXISTS alerts (
     acknowledged INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_time ON alerts(timestamp);
+
+CREATE TABLE IF NOT EXISTS selftests (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    identity    TEXT    NOT NULL,
+    device      TEXT,
+    test_type   TEXT,
+    started_ts  INTEGER NOT NULL,
+    finished_ts INTEGER,
+    status      TEXT    NOT NULL DEFAULT 'running',   -- running/completed/aborted/error
+    result      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_selftests_identity
+    ON selftests(identity, started_ts);
 """
 
 
@@ -172,6 +185,61 @@ class HistoryDB:
         cur = self._conn.execute("UPDATE alerts SET acknowledged = 1")
         self._conn.commit()
         return cur.rowcount
+
+    # ------------------------------------------------------------ self-tests --
+
+    def selftest_start(self, identity: str, device: str, test_type: str,
+                       ts: int | None = None) -> int:
+        """Record a freshly launched self-test as 'running'.
+
+        Any earlier still-'running' test for the same disk is marked 'aborted'
+        (a new run supersedes it), so at most one running row exists per disk.
+        Returns the new row id.
+        """
+        ts = ts if ts is not None else self._now()
+        self._conn.execute(
+            "UPDATE selftests SET status='aborted', finished_ts=? "
+            "WHERE identity=? AND status='running'",
+            (ts, identity),
+        )
+        cur = self._conn.execute(
+            "INSERT INTO selftests "
+            "(identity, device, test_type, started_ts, status) "
+            "VALUES (?, ?, ?, ?, 'running')",
+            (identity, device, test_type, ts),
+        )
+        self._conn.commit()
+        return int(cur.lastrowid)
+
+    def selftest_running(self, identity: str) -> dict | None:
+        """The disk's currently-running self-test row, or None."""
+        row = self._conn.execute(
+            "SELECT * FROM selftests WHERE identity=? AND status='running' "
+            "ORDER BY started_ts DESC LIMIT 1",
+            (identity,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def selftest_finish(self, identity: str, status: str = "completed",
+                        result: str | None = None,
+                        ts: int | None = None) -> bool:
+        """Close the disk's running self-test. Returns True if one was open."""
+        ts = ts if ts is not None else self._now()
+        cur = self._conn.execute(
+            "UPDATE selftests SET status=?, result=?, finished_ts=? "
+            "WHERE identity=? AND status='running'",
+            (status, result, ts, identity),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    def selftest_recent(self, identity: str, limit: int = 20) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM selftests WHERE identity=? "
+            "ORDER BY started_ts DESC LIMIT ?",
+            (identity, limit),
+        )
+        return [dict(r) for r in rows]
 
     # ------------------------------------------------------------- retention --
 

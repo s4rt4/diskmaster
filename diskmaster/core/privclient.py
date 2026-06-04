@@ -17,6 +17,24 @@ from pathlib import Path
 
 _HELPER = Path(__file__).resolve().parent / "privhelper.py"
 
+# When DiskMaster is installed, pkexec should launch this wrapper so the branded
+# polkit action (com.diskmaster.runhelper) governs the prompt. Paths mirror the
+# exec.path in packaging/polkit/com.diskmaster.policy. Running from a source
+# checkout, none of these exist and we fall back to `pkexec python3 privhelper.py`
+# (the generic polkit dialog).
+_INSTALLED_HELPER_PATHS = (
+    "/usr/libexec/diskmaster/diskmaster-helper",
+    "/usr/local/libexec/diskmaster/diskmaster-helper",
+    "/usr/lib/diskmaster/diskmaster-helper",
+)
+
+
+def _installed_helper() -> str | None:
+    for p in _INSTALLED_HELPER_PATHS:
+        if os.access(p, os.X_OK):
+            return p
+    return None
+
 
 class PrivError(Exception):
     pass
@@ -50,6 +68,11 @@ class PrivClient:
             return target
         if shutil.which("pkexec"):
             self._method = "pkexec"
+            # Prefer the installed wrapper so our polkit action brands the prompt;
+            # fall back to invoking the helper script directly (dev checkout).
+            wrapper = _installed_helper()
+            if wrapper:
+                return ["pkexec", wrapper]
             return ["pkexec", py, str(_HELPER)]
         if shutil.which("sudo"):
             self._method = "sudo"
@@ -162,8 +185,11 @@ class PrivClient:
     def hdsentinel_solid(self) -> str:
         return self.request("hdsentinel_solid")
 
-    def smart(self, device: str) -> dict:
-        return self.request("smart", device=device)
+    def smart(self, device: str, nowake: bool = False) -> dict:
+        return self.request("smart", device=device, nowake=nowake)
+
+    def power_mode(self, device: str) -> dict:
+        return self.request("power_mode", device=device)
 
     def nvme_smart(self, device: str) -> dict:
         return self.request("nvme_smart", device=device)

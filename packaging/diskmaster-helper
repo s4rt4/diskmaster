@@ -1,0 +1,17 @@
+#!/bin/sh
+# pkexec entry point for the DiskMaster privileged helper.
+#
+# Installed to /usr/libexec/diskmaster/diskmaster-helper — this exact path is
+# anchored by the polkit action com.diskmaster.runhelper, so pkexec shows the
+# branded DiskMaster prompt when it launches us. We then hand off to the real
+# JSON-lines helper, which keeps running as root for the session.
+#
+# DISKMASTER_ROOT is where the diskmaster Python package was installed
+# (its `core/` lives there). Packaging sets the default below; override only
+# for non-standard layouts.
+set -eu
+
+DM_ROOT="${DISKMASTER_ROOT:-/usr/lib/diskmaster}"
+PYTHON="${DISKMASTER_PYTHON:-python3}"
+
+exec "$PYTHON" "$DM_ROOT/core/privhelper.py" "$@"

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  Installed to /usr/share/polkit-1/actions/com.diskmaster.policy
+
+  Gives DiskMaster a single, branded authentication prompt for its long-lived
+  privileged helper instead of pkexec's generic "authenticate to run program as
+  another user" dialog. The helper is spawned once per session; auth_admin_keep
+  lets that one authentication cover the session's repeated polls.
+
+  The exec.path below MUST match the wrapper pkexec actually launches
+  (see packaging/diskmaster-helper and PrivClient._installed_helper).
+-->
+<policyconfig>
+  <vendor>DiskMaster</vendor>
+  <vendor_url>https://github.com/s4rt4/diskmaster</vendor_url>
+
+  <action id="com.diskmaster.runhelper">
+    <description>Run the DiskMaster privileged helper</description>
+    <description xml:lang="id">Jalankan helper hak akses DiskMaster</description>
+    <message>Authentication is required to read disk health and S.M.A.R.T. data</message>
+    <message xml:lang="id">Diperlukan autentikasi untuk membaca kesehatan disk dan data S.M.A.R.T.</message>
+    <icon_name>diskmaster</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/diskmaster/diskmaster-helper</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+</policyconfig>

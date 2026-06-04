@@ -29,11 +29,13 @@ class PollerWorker(QThread):
     status = pyqtSignal(str)
 
     def __init__(self, service: DiskService, full_interval_sec: int = 300,
-                 quick_interval_sec: int = 30, parent=None):
+                 quick_interval_sec: int = 30, skip_standby: bool = True,
+                 parent=None):
         super().__init__(parent)
         self._service = service
         self._full_interval = max(30, int(full_interval_sec))
         self._quick_interval = max(5, int(quick_interval_sec))
+        self._skip_standby = bool(skip_standby)
         self._stop = threading.Event()
         self._wake = threading.Event()
         self._force_full = False
@@ -43,6 +45,9 @@ class PollerWorker(QThread):
         if quick_seconds is not None:
             self._quick_interval = max(5, int(quick_seconds))
         self._wake.set()
+
+    def set_skip_standby(self, on: bool) -> None:
+        self._skip_standby = bool(on)
 
     def refresh_now(self) -> None:
         """Force a full scan on the next tick, immediately."""
@@ -57,16 +62,29 @@ class PollerWorker(QThread):
         last_full = 0.0  # 0 → first iteration is always a full scan
         while not self._stop.is_set():
             now = time.monotonic()
-            if self._force_full or last_full == 0.0 or \
+            manual = self._force_full
+            if manual or last_full == 0.0 or \
                     now - last_full >= self._full_interval:
                 self._force_full = False
-                if self._full_poll():
+                # A scheduled full scan would spin up sleeping drives just to
+                # read them. If the user didn't ask for it (manual) and every
+                # ATA disk is asleep, skip it and wait out another interval.
+                if not manual and self._skip_standby and self._all_asleep():
+                    self.status.emit("All disks in standby — scan skipped")
+                    last_full = time.monotonic()
+                elif self._full_poll():
                     last_full = time.monotonic()
             else:
                 self._quick_poll()
             # Sleep until the next quick tick, a manual refresh, or stop.
             self._wake.wait(timeout=self._quick_interval)
             self._wake.clear()
+
+    def _all_asleep(self) -> bool:
+        try:
+            return self._service.all_disks_asleep()
+        except Exception:  # noqa: BLE001 — never let this kill the poll loop
+            return False
 
     def _full_poll(self) -> bool:
         try:

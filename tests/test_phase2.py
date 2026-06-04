@@ -184,6 +184,65 @@ def test_status_classification():
     print("OK test_status_classification")
 
 
+def test_selftest_persist():
+    db = HistoryDB(":memory:")
+    # Start a test → one running row, returns id.
+    tid = db.selftest_start("SER123", "/dev/sda", "extended")
+    assert isinstance(tid, int) and tid > 0
+    run = db.selftest_running("SER123")
+    assert run and run["status"] == "running" and run["test_type"] == "extended"
+
+    # Starting another supersedes the first (aborted), one running remains.
+    db.selftest_start("SER123", "/dev/sda", "short")
+    run = db.selftest_running("SER123")
+    assert run["test_type"] == "short"
+    aborted = [r for r in db.selftest_recent("SER123") if r["status"] == "aborted"]
+    assert len(aborted) == 1
+
+    # Finishing closes the running row; none left running.
+    assert db.selftest_finish("SER123", "completed",
+                              "Completed without error") is True
+    assert db.selftest_running("SER123") is None
+    assert db.selftest_finish("SER123") is False  # nothing open now
+
+    # A different disk is isolated.
+    assert db.selftest_running("OTHER") is None
+    db.close()
+    print("OK test_selftest_persist")
+
+
+def test_power_mode_parse():
+    from core.backends.smartctl import power_mode_from_json, is_asleep
+    # smartctl -n standby on a sleeping drive: skip message + exit bit 1 set.
+    standby = {"smartctl": {"exit_status": 2, "messages": [
+        {"string": "Device is in STANDBY mode, exit(2)",
+         "severity": "information"}]}}
+    assert power_mode_from_json(standby) == "standby"
+    assert is_asleep(standby) is True
+
+    sleep = {"smartctl": {"exit_status": 2, "messages": [
+        {"string": "Device is in SLEEP mode, exit(2)"}]}}
+    assert power_mode_from_json(sleep) == "sleep"
+    assert is_asleep(sleep) is True
+
+    # Awake drive: smartctl proceeded, clean exit, full payload present.
+    awake = {"smartctl": {"exit_status": 0, "messages": []},
+             "ata_smart_attributes": {"table": []}}
+    assert power_mode_from_json(awake) == "active"
+    assert is_asleep(awake) is False
+
+    # Idle/active are reported as awake (not asleep) and never suppress a read.
+    idle = {"smartctl": {"exit_status": 0, "messages": [
+        {"string": "Device is in IDLE mode"}]}}
+    assert power_mode_from_json(idle) == "idle"
+    assert is_asleep(idle) is False
+
+    # Garbage in → unknown, and unknown must not be treated as asleep.
+    assert power_mode_from_json({}) == "unknown"
+    assert is_asleep({}) is False
+    print("OK test_power_mode_parse")
+
+
 if __name__ == "__main__":
     test_db_record_and_query()
     test_db_smart_alerts_cleanup()
@@ -192,4 +251,6 @@ if __name__ == "__main__":
     test_notifier_rising_edge()
     test_solid_parse_both_ends()
     test_status_classification()
+    test_selftest_persist()
+    test_power_mode_parse()
     print("\nALL PASSED")

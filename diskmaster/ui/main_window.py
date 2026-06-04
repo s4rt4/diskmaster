@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSplitter,
     QSystemTrayIcon,
     QTabWidget,
@@ -88,7 +89,8 @@ class MainWindow(QMainWindow):
 
         full = self.settings.get("polling", "full_interval_sec", 300)
         quick = self.settings.get("polling", "quick_interval_sec", 30)
-        self.poller = PollerWorker(self.service, full, quick)
+        skip_standby = self.settings.get("polling", "skip_standby", True)
+        self.poller = PollerWorker(self.service, full, quick, skip_standby)
         self.poller.disks_updated.connect(self._on_disks_updated)
         self.poller.quick_updated.connect(self._on_quick_updated)
         self.poller.error.connect(self._on_poll_error)
@@ -103,20 +105,38 @@ class MainWindow(QMainWindow):
     def _build_toolbar(self):
         tb = self.addToolBar("Main")
         tb.setMovable(False)
-        self.act_scan = QAction("⟳  Scan (admin)", self)
-        self.act_scan.triggered.connect(self._start_scan)
-        tb.addAction(self.act_scan)
+
+        # Primary action — a prominent accent button, not a flat toolbar entry.
+        self.btn_scan = QPushButton("⟳  Scan (admin)")
+        self.btn_scan.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_scan.setToolTip("Read disk health and S.M.A.R.T. data (requires admin)")
+        accent = theme.ACCENT
+        self.btn_scan.setStyleSheet(
+            "QPushButton {"
+            f" background:{accent.name()}; color:white; font-weight:bold;"
+            "  border:none; border-radius:5px; padding:6px 16px; margin:2px 4px; }"
+            f"QPushButton:hover {{ background:{accent.lighter(115).name()}; }}"
+            f"QPushButton:pressed {{ background:{accent.darker(115).name()}; }}")
+        self.btn_scan.clicked.connect(self._start_scan)
+        tb.addWidget(self.btn_scan)
         tb.addSeparator()
-        self.act_theme = QAction("", self)
-        self.act_theme.triggered.connect(self._toggle_theme)
-        tb.addAction(self.act_theme)
-        self._sync_theme_action()
+
         act_settings = QAction("Settings", self)
         act_settings.triggered.connect(self._open_settings)
         tb.addAction(act_settings)
         act_about = QAction("About", self)
         act_about.triggered.connect(self._about)
         tb.addAction(act_about)
+
+        # Spacer pushes the theme toggle to the far right, on its own.
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding,
+                             QSizePolicy.Policy.Preferred)
+        tb.addWidget(spacer)
+        self.act_theme = QAction("", self)
+        self.act_theme.triggered.connect(self._toggle_theme)
+        tb.addAction(self.act_theme)
+        self._sync_theme_action()
 
     def _build_central(self):
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -139,7 +159,7 @@ class MainWindow(QMainWindow):
         self.temperature = TemperaturePanel(self.db)
         self.smart_tab = self._build_smart_tab()
         self.information = InformationPanel(self.service)
-        self.log_panel = SelfTestPanel(self.service)
+        self.log_panel = SelfTestPanel(self.service, self.db)
         self.performance = PerformancePanel()
         self.alert_log = AlertLogPanel(self.db)
 
@@ -216,10 +236,11 @@ class MainWindow(QMainWindow):
     # --------------------------------------------------------------- actions --
 
     def _start_scan(self):
+        # A manual scan must always run, even if drives are in standby — mark it
+        # forced before (re)starting so the poller wakes them on the user's say-so.
+        self.poller.refresh_now()
         if not self.poller.isRunning():
             self.poller.start()
-        else:
-            self.poller.refresh_now()
         self._set_status("Scanning… (an admin prompt may appear)")
 
     def _load_smart(self):
@@ -239,6 +260,8 @@ class MainWindow(QMainWindow):
             self.poller.set_interval(
                 self.settings.get("polling", "full_interval_sec", 300),
                 self.settings.get("polling", "quick_interval_sec", 30))
+            self.poller.set_skip_standby(
+                self.settings.get("polling", "skip_standby", True))
             self.db.cleanup(int(self.settings.get("history", "retention_days", 90)))
             # Theme may have changed via the dialog too.
             new_theme = theme.normalize(self.settings.get("general", "theme", "light"))
@@ -324,7 +347,7 @@ class MainWindow(QMainWindow):
         self.overview.set_disk(disk)
         self.temperature.set_disk(disk)
         self.information.set_disk(disk)
-        self.log_panel.set_device(disk.device)
+        self.log_panel.set_disk(disk)
         if include_perf:
             self.performance.set_disk(disk)
 
