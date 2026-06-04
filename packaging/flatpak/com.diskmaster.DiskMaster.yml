@@ -1,0 +1,51 @@
+# Flatpak manifest for DiskMaster.
+#
+# EXPERIMENTAL / best-effort. DiskMaster is a privileged hardware monitor: it
+# shells out to smartctl / HDSentinel and escalates via pkexec. The flatpak
+# sandbox does not provide those host tools, so this build grants broad host
+# access (--device=all, --filesystem=host) and still relies on smartmontools
+# being installed on the *host*. Prefer the .deb / RPM / AUR packages where you
+# can; this manifest exists for users who want a sandboxed install anyway.
+#
+# Build:  flatpak-builder --user --install build com.diskmaster.DiskMaster.yml
+app-id: com.diskmaster.DiskMaster
+runtime: org.freedesktop.Platform
+runtime-version: '23.08'
+sdk: org.freedesktop.Sdk
+command: diskmaster
+
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=all
+  - --filesystem=host
+  - --talk-name=org.freedesktop.Notifications
+  - --system-talk-name=org.freedesktop.PolicyKit1
+  # smartctl / hdsentinel are expected on the host; reach them via the host path.
+  - --env=PATH=/app/bin:/usr/bin:/usr/sbin:/sbin:/bin
+
+modules:
+  - name: python-pyqt6
+    buildsystem: simple
+    build-commands:
+      - pip3 install --prefix=/app --no-build-isolation PyQt6 PyQt6-Qt6 PyQt6-sip
+    # Network is unavailable during builds; vendor the wheels under ./pip-cache
+    # and point pip at them, or switch to a python3-modules generated manifest.
+
+  - name: diskmaster
+    buildsystem: simple
+    sources:
+      - type: dir
+        path: ../..
+    build-commands:
+      - make -C packaging install DESTDIR=/ PREFIX=/app
+      # Flatpak requires desktop entry, icon and metainfo named by app-id.
+      - mv /app/share/applications/diskmaster.desktop
+           /app/share/applications/com.diskmaster.DiskMaster.desktop
+      - desktop-file-edit --set-icon=com.diskmaster.DiskMaster
+           /app/share/applications/com.diskmaster.DiskMaster.desktop
+      - mv /app/share/icons/hicolor/scalable/apps/diskmaster.svg
+           /app/share/icons/hicolor/scalable/apps/com.diskmaster.DiskMaster.svg
+      - install -Dm0644 packaging/flatpak/com.diskmaster.DiskMaster.metainfo.xml
+           /app/share/metainfo/com.diskmaster.DiskMaster.metainfo.xml

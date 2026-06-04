@@ -1,0 +1,24 @@
+# Maintainer: s4rt4 <vinvan83@gmail.com>
+pkgname=diskmaster
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="HDD/SSD/NVMe health monitor with a Hard Disk Sentinel-style UI"
+arch=('any')
+url="https://github.com/s4rt4/diskmaster"
+license=('custom')
+depends=('python' 'python-pyqt6' 'polkit' 'smartmontools')
+optdepends=('nvme-cli: NVMe S.M.A.R.T. data'
+            'libnotify: desktop notifications')
+makedepends=('git')
+source=("git+https://github.com/s4rt4/diskmaster.git#tag=v$pkgver")
+sha256sums=('SKIP')
+
+build() {
+    # Byte-compile so the package ships .pyc (optional but tidy).
+    python -m compileall -q "$srcdir/$pkgname/diskmaster" || true
+}
+
+package() {
+    make -C "$srcdir/$pkgname/packaging" install \
+        DESTDIR="$pkgdir" PREFIX=/usr
+}

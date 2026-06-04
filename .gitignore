@@ -27,6 +27,11 @@ env/
 .coverage
 htmlcov/
 
+# Packaging build artifacts (produced by build-*.sh)
+packaging/diskmaster-*.tar.gz
+packaging/*.deb
+packaging/*.rpm
+
 # App data / runtime
 data/
 *.db

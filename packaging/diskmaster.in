@@ -1,0 +1,5 @@
+#!/bin/sh
+# DiskMaster launcher (installed to @PREFIX@/bin/diskmaster).
+# The app's modules import as top-level packages, so we run main.py from the
+# install root with that root on sys.path (main.py adds it itself).
+exec python3 "@APPROOT@/main.py" "$@"

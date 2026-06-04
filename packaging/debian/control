@@ -1,0 +1,16 @@
+Package: diskmaster
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.11), python3-pyqt6, pkexec, smartmontools
+Recommends: nvme-cli, libnotify-bin
+Maintainer: s4rt4 <vinvan83@gmail.com>
+Homepage: https://github.com/s4rt4/diskmaster
+Description: HDD/SSD/NVMe health monitor for Linux
+ DiskMaster is a PyQt6 desktop monitor for disk health, temperature and
+ S.M.A.R.T. data, with a Hard Disk Sentinel-style interface: per-disk cards,
+ history charts, self-tests and threshold alerts.
+ .
+ The proprietary HDSentinel CLI is not bundled; install it separately from
+ hdsentinel.com to enable that backend. smartctl works out of the box.

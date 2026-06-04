@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=DiskMaster
+GenericName=Disk Health Monitor
+GenericName[id]=Pemantau Kesehatan Disk
+Comment=Monitor HDD/SSD/NVMe health, temperature and S.M.A.R.T. data
+Comment[id]=Pantau kesehatan, suhu, dan data S.M.A.R.T. HDD/SSD/NVMe
+Exec=diskmaster
+Icon=diskmaster
+Terminal=false
+Categories=System;Monitor;Utility;
+Keywords=disk;smart;hdd;ssd;nvme;health;temperature;sentinel;
+StartupNotify=true

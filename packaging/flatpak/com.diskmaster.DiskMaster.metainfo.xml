@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.diskmaster.DiskMaster</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-Unspecified</project_license>
+  <name>DiskMaster</name>
+  <summary>Monitor HDD/SSD/NVMe health, temperature and S.M.A.R.T. data</summary>
+
+  <description>
+    <p>
+      DiskMaster is a desktop monitor for disk health, temperature and
+      S.M.A.R.T. data with a Hard Disk Sentinel-style interface: per-disk
+      cards, history charts, self-tests and threshold alerts. It reads data
+      via smartctl, sysfs, nvme-cli and (optionally) the HDSentinel CLI.
+    </p>
+    <p>
+      The proprietary HDSentinel binary is not bundled; install it separately
+      to enable that backend. smartctl works out of the box.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">com.diskmaster.DiskMaster.desktop</launchable>
+  <url type="homepage">https://github.com/s4rt4/diskmaster</url>
+  <provides>
+    <binary>diskmaster</binary>
+  </provides>
+
+  <releases>
+    <release version="0.1.0" date="2026-06-04">
+      <description>
+        <p>Initial packaging release.</p>
+      </description>
+    </release>
+  </releases>
+
+  <content_rating type="oars-1.1"/>
+</component>
