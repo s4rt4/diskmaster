@@ -57,8 +57,13 @@ def _check_device(device: str) -> str | None:
 
 
 def _run(argv: list[str]) -> subprocess.CompletedProcess:
+    # HDSentinel emits the degree sign (0xB0) and other Latin-1 bytes that are
+    # not valid UTF-8, so decode leniently instead of letting text=True raise a
+    # UnicodeDecodeError. We only ever parse numbers/XML out of this, so a
+    # replacement char for the odd byte is harmless.
     return subprocess.run(
-        argv, capture_output=True, text=True, timeout=_TIMEOUT, check=False
+        argv, capture_output=True, text=True, encoding="utf-8",
+        errors="replace", timeout=_TIMEOUT, check=False
     )
 
 

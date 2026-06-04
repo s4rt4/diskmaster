@@ -75,11 +75,27 @@ QGroupBox::title {
     left: 10px;
     padding: 0 4px;
 }
+QTabWidget::pane {
+    border: 1px solid palette(mid);
+    border-radius: 4px;
+    top: -1px;
+}
+QTabBar { qproperty-drawBase: 0; }
 QTabBar::tab {
-    padding: 5px 12px;
-    margin-right: 2px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    padding: 6px 14px;
+    margin-right: 1px;
+    margin-bottom: 1px;
+}
+QTabBar::tab:hover:!selected {
+    background: rgba(128, 128, 128, 0.12);
 }
 QTabBar::tab:selected {
+    background: palette(base);
+    border: 1px solid palette(mid);
     border-bottom: 2px solid %ACCENT%;
     font-weight: bold;
 }
