@@ -187,11 +187,12 @@ class _VolumeCard(QFrame):
         lay.addLayout(head)
 
         row = QHBoxLayout()
-        cap = QLabel("Free Space:")
+        cap = QLabel("Used Space:")
         cap.setStyleSheet("color:gray; font-size:11px;")
         cap.setFixedWidth(72)
         bar = SolidBar(_FREE_COLOR, 15)
-        bar.set(vol.free_fraction, f"{vol.free_human} free")
+        # Colour the *used* portion; the empty track is the free space left.
+        bar.set(vol.used_fraction, f"{vol.used_human} used")
         row.addWidget(cap)
         row.addWidget(bar, 1)
         lay.addLayout(row)

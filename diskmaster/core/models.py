@@ -118,6 +118,10 @@ class VolumeInfo:
     def free_fraction(self) -> float:
         return self.free_gb / self.total_gb if self.total_gb > 0 else 0.0
 
+    @property
+    def used_fraction(self) -> float:
+        return 1.0 - self.free_fraction if self.total_gb > 0 else 0.0
+
     @staticmethod
     def _human(gb: float) -> str:
         if gb >= 1024:
@@ -131,3 +135,7 @@ class VolumeInfo:
     @property
     def free_human(self) -> str:
         return self._human(self.free_gb)
+
+    @property
+    def used_human(self) -> str:
+        return self._human(self.used_gb)
