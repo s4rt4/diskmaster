@@ -10,6 +10,11 @@ from __future__ import annotations
 from ..models import DiskInfo, DiskType, Status
 
 
+# NVMe reports lifetime transfer as "data units" of 1000 * 512 = 512000 bytes
+# each (NVMe base spec, SMART/Health log).
+_NVME_UNIT_BYTES = 512_000
+
+
 def _kelvin_to_c(k) -> int:
     try:
         k = int(k)
@@ -34,6 +39,8 @@ def parse_nvme_smart(data: dict) -> dict:
         "power_on_hours": data.get("power_on_hours"),
         "unsafe_shutdowns": data.get("unsafe_shutdowns"),
         "critical_warning": data.get("critical_warning"),
+        "data_units_written": data.get("data_units_written"),
+        "data_units_read": data.get("data_units_read"),
     }
 
 
@@ -50,6 +57,12 @@ def enrich_disk(disk: DiskInfo, data: dict) -> DiskInfo:
     used = s["percentage_used"]
     if isinstance(used, (int, float)):
         disk.health = max(0, min(100, round(100 - used)))
+    duw = s["data_units_written"]
+    if isinstance(duw, int) and duw > 0:
+        disk.total_written_bytes = duw * _NVME_UNIT_BYTES
+    dur = s["data_units_read"]
+    if isinstance(dur, int) and dur > 0:
+        disk.total_read_bytes = dur * _NVME_UNIT_BYTES
     cw = s["critical_warning"]
     if isinstance(cw, int) and cw != 0:
         disk.status = Status.WARNING

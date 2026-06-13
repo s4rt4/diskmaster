@@ -5,7 +5,12 @@ from __future__ import annotations
 
 from . import paths
 from .backends import nvme as nvme_backend
-from .backends.smartctl import is_asleep, parse_smart_json, power_mode_from_json
+from .backends.smartctl import (
+    is_asleep,
+    lifetime_bytes,
+    parse_smart_json,
+    power_mode_from_json,
+)
 from .backends.sysfs import IOSampler
 from .backends.volumes import list_volumes
 from .models import DiskInfo, DiskType, IOStats, VolumeInfo
@@ -49,8 +54,32 @@ class DiskService:
         disks = parse_xml(xml)  # raises HDSentinelParseError on bad output
         self._enrich_from_sysfs(disks)
         self._add_missing_nvme(disks)
+        self._attach_lifetime(disks)
         self._attach_io_stats(disks)
         return disks
+
+    def _attach_lifetime(self, disks: list[DiskInfo]) -> None:
+        """Fill lifetime host writes/reads for ATA disks from SMART 241/242.
+
+        NVMe disks already carry these from the smart-log path. We read SMART
+        with ``nowake`` so a sleeping drive is never spun up just for this; the
+        drive has typically just been read by the HDSentinel scan anyway, so no
+        extra spin-up happens. Failures are silent — the totals stay unknown.
+        """
+        for d in disks:
+            if d.disk_type not in (DiskType.HDD, DiskType.SSD):
+                continue
+            try:
+                data = self.client.smart(d.device, nowake=True)
+            except PrivError:
+                continue
+            if is_asleep(data):
+                continue
+            written, read = lifetime_bytes(parse_smart_json(data))
+            if written >= 0:
+                d.total_written_bytes = written
+            if read >= 0:
+                d.total_read_bytes = read
 
     def _add_missing_nvme(self, disks: list[DiskInfo]) -> None:
         """NVMe drives are often absent from HDSentinel output — fill them in

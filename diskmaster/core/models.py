@@ -73,6 +73,8 @@ class DiskInfo:
     power_on_hours: int = -1
     estimated_lifetime: str = ""
     status: Status = Status.UNKNOWN
+    total_written_bytes: int = -1     # lifetime host bytes written, -1 = unknown
+    total_read_bytes: int = -1        # lifetime host bytes read, -1 = unknown
     smart_attributes: list[SmartAttribute] = field(default_factory=list)
     io_stats: IOStats | None = None
 
@@ -80,6 +82,24 @@ class DiskInfo:
     def identity(self) -> str:
         """Stable key for history/DB. Serial preferred, WWN fallback, device last."""
         return self.serial or self.wwn or self.device
+
+    @staticmethod
+    def _human_bytes(n: int) -> str:
+        """Decimal (TB/GB) like the rest of the app. '—' for unknown."""
+        if n < 0:
+            return "—"
+        tb = n / 1_000_000_000_000
+        if tb >= 1:
+            return f"{tb:.2f} TB"
+        return f"{n / 1_000_000_000:.1f} GB"
+
+    @property
+    def total_written_human(self) -> str:
+        return self._human_bytes(self.total_written_bytes)
+
+    @property
+    def total_read_human(self) -> str:
+        return self._human_bytes(self.total_read_bytes)
 
     @property
     def size_human(self) -> str:

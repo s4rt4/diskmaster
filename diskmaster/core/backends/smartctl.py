@@ -43,6 +43,29 @@ def parse_smart_json(data: dict) -> list[SmartAttribute]:
     return attrs
 
 
+# Lifetime host data transfer. ATA SSDs/HDDs report cumulative LBA counts in
+# SMART attributes 241/242; the raw value is a count of 512-byte sectors. A few
+# vendors instead encode 241 in GiB or 32-MiB units — we deliberately don't try
+# to guess those, so such drives simply show no total (better than a wrong one).
+_ATTR_LBAS_WRITTEN = 241
+_ATTR_LBAS_READ = 242
+_LBA_BYTES = 512
+
+
+def lifetime_bytes(attrs: list[SmartAttribute]) -> tuple[int, int]:
+    """(written, read) lifetime host bytes from SMART attrs 241/242.
+
+    Either value is -1 when its attribute is absent or zero.
+    """
+    written = read = -1
+    for a in attrs:
+        if a.attr_id == _ATTR_LBAS_WRITTEN and a.raw_value > 0:
+            written = a.raw_value * _LBA_BYTES
+        elif a.attr_id == _ATTR_LBAS_READ and a.raw_value > 0:
+            read = a.raw_value * _LBA_BYTES
+    return written, read
+
+
 def overall_health(data: dict) -> str | None:
     """smartctl overall SMART health assessment: 'PASSED' / 'FAILED' / None."""
     status = data.get("smart_status") if isinstance(data, dict) else None

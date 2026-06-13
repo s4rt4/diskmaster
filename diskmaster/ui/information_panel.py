@@ -48,6 +48,8 @@ class InformationPanel(QWidget):
         self.v_size = _Value()
         self.v_power = _Value()
         self.v_health = _Value()
+        self.v_written = _Value()
+        self.v_read = _Value()
         form.addRow("Device:", self.v_device)
         form.addRow("Model:", self.v_model)
         form.addRow("Serial number:", self.v_serial)
@@ -57,6 +59,8 @@ class InformationPanel(QWidget):
         form.addRow("Capacity:", self.v_size)
         form.addRow("Power on time:", self.v_power)
         form.addRow("Health / Performance:", self.v_health)
+        form.addRow("Total host writes:", self.v_written)
+        form.addRow("Total host reads:", self.v_read)
         root.addWidget(info)
 
         self.tools = ToolsPanel(service)
@@ -67,7 +71,7 @@ class InformationPanel(QWidget):
     def clear(self):
         for v in (self.v_device, self.v_model, self.v_serial, self.v_wwn,
                   self.v_firmware, self.v_type, self.v_size, self.v_power,
-                  self.v_health):
+                  self.v_health, self.v_written, self.v_read):
             v.setText("—")
         self.tools.set_disk(None)
 
@@ -83,6 +87,8 @@ class InformationPanel(QWidget):
         h = f"{disk.health}%" if disk.health >= 0 else "—"
         p = f"{disk.performance}%" if disk.performance >= 0 else "—"
         self.v_health.setText(f"{h} / {p}")
+        self.v_written.setText(disk.total_written_human)
+        self.v_read.setText(disk.total_read_human)
         self.tools.set_disk(disk)
 
 

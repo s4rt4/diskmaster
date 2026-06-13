@@ -135,6 +135,8 @@ class OverviewPanel(QWidget):
         self.m_power = self._metric(grid, 0, "Power on time:")
         self.m_life = self._metric(grid, 1, "Estimated remaining lifetime:")
         self.m_temp = self._metric(grid, 2, "Current / Max temperature:")
+        self.m_written = self._metric(grid, 3, "Total host writes:")
+        self.m_read = self._metric(grid, 4, "Total host reads:")
         mrow.addLayout(grid, 1)
         self.btn_repeat = QPushButton("Repeat Test")
         self.btn_repeat.clicked.connect(self.repeat_test)
@@ -166,6 +168,8 @@ class OverviewPanel(QWidget):
         self.m_power.setText("—")
         self.m_life.setText("—")
         self.m_temp.setText("—")
+        self.m_written.setText("—")
+        self.m_read.setText("—")
         self.chart.set_identity(None)
 
     def _set_status(self, status: Status):
@@ -186,6 +190,8 @@ class OverviewPanel(QWidget):
         cur = f"{disk.temp_current} °C" if disk.temp_current >= 0 else "—"
         mx = f"{disk.temp_max} °C" if disk.temp_max >= 0 else "—"
         self.m_temp.setText(f"{cur}  /  {mx}")
+        self.m_written.setText(disk.total_written_human)
+        self.m_read.setText(disk.total_read_human)
         self.chart.set_identity(disk.identity)
 
 

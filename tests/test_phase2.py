@@ -93,6 +93,8 @@ def test_nvme_parse_and_enrich():
         "available_spare": 100,
         "critical_warning": 0,
         "media_errors": 0,
+        "data_units_written": 2_000_000,   # × 512000 B = 1.024 TB
+        "data_units_read": 1_000_000,      # × 512000 B = 512 GB
     }
     s = nvme.parse_nvme_smart(sample)
     assert s["temp_c"] == 40, s["temp_c"]
@@ -105,7 +107,37 @@ def test_nvme_parse_and_enrich():
     assert disk.health == 93  # 100 - 7
     assert disk.power_on_hours == 1234
     assert disk.status == Status.GOOD
+    assert disk.total_written_bytes == 2_000_000 * 512_000
+    assert disk.total_read_bytes == 1_000_000 * 512_000
+    assert disk.total_written_human == "1.02 TB", disk.total_written_human
+    assert disk.total_read_human == "512.0 GB", disk.total_read_human
     print("OK test_nvme_parse_and_enrich")
+
+
+def test_lifetime_bytes_from_smart():
+    from core.backends.smartctl import lifetime_bytes
+    attrs = [
+        SmartAttribute(attr_id=9, name="Power_On_Hours", value=100, worst=100,
+                       threshold=0, raw_value=2424),
+        SmartAttribute(attr_id=241, name="Total_LBAs_Written", value=99, worst=99,
+                       threshold=0, raw_value=3_000_000_000),  # × 512 = 1.536 TB
+        SmartAttribute(attr_id=242, name="Total_LBAs_Read", value=99, worst=99,
+                       threshold=0, raw_value=1_000_000_000),  # × 512 = 512 GB
+    ]
+    written, read = lifetime_bytes(attrs)
+    assert written == 3_000_000_000 * 512
+    assert read == 1_000_000_000 * 512
+
+    disk = DiskInfo(device="/dev/sda", total_written_bytes=written,
+                    total_read_bytes=read)
+    assert disk.total_written_human == "1.54 TB", disk.total_written_human
+    assert disk.total_read_human == "512.0 GB", disk.total_read_human
+
+    # Drive without 241/242 → unknown, shown as em dash.
+    w2, r2 = lifetime_bytes([attrs[0]])
+    assert w2 == -1 and r2 == -1
+    assert DiskInfo(device="/dev/sdz").total_written_human == "—"
+    print("OK test_lifetime_bytes_from_smart")
 
 
 def test_notifier_rising_edge():
@@ -248,6 +280,7 @@ if __name__ == "__main__":
     test_db_smart_alerts_cleanup()
     test_sysfs_throughput_math()
     test_nvme_parse_and_enrich()
+    test_lifetime_bytes_from_smart()
     test_notifier_rising_edge()
     test_solid_parse_both_ends()
     test_status_classification()
